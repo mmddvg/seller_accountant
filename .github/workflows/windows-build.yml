@@ -1,0 +1,34 @@
+name: Build for Windows
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      # Checkout the repository
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Set up Go
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.22 # Replace with your required Go version
+
+      # Build the executable
+      - name: Build Windows Binary
+        run: |
+          go build -o inventory.exe main.go
+
+      # Upload the built binary as an artifact
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: inventory-windows
+          path: inventory.exe
