@@ -71,7 +71,7 @@ func TestSale(t *testing.T) {
 	// test
 
 	_, err = app.CreateFactor(acc.Id, []models.FactorProduct{{ProductId: 1315, Count: 12}})
-	require.Error(t, err, "Product with id : 10 not found")
+	require.Error(t, err, "Product with id : 1315 not found")
 
 	factor, err := app.CreateFactor(acc.Id, []models.FactorProduct{{ProductId: prod1.Id, Count: 5}, {ProductId: prod2.Id, Count: 7}})
 	require.NoError(t, err)
