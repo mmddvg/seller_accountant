@@ -3,9 +3,11 @@ package usecases
 import (
 	"inventory/pkg/apperrors"
 	"inventory/pkg/models"
+
+	"github.com/samber/lo"
 )
 
-func (app *Application) CreateFactor(accId uint, productIds []uint) (models.Factor, error) {
+func (app *Application) CreateFactor(accId uint, factorProducts []models.FactorProduct) (models.Factor, error) {
 	var factor models.Factor
 
 	account, err := app.DB.GetAccount(accId)
@@ -14,18 +16,23 @@ func (app *Application) CreateFactor(accId uint, productIds []uint) (models.Fact
 		return factor, err
 	}
 
-	products, err := app.DB.GetProducts(productIds)
+	var ids []uint
+	for i := range factorProducts {
+		ids = append(ids, factorProducts[i].ProductId)
+	}
+
+	products, err := app.DB.GetProducts(ids)
 	if err != nil {
 		return factor, err
 	}
 
-	if len(products) != len(productIds) {
+	if len(products) != len(ids) {
 		existingProductIDs := make(map[uint]bool)
 		for _, product := range products {
 			existingProductIDs[product.Id] = true
 		}
 
-		for _, pid := range productIds {
+		for _, pid := range ids {
 			if !existingProductIDs[pid] {
 				return factor, apperrors.NotFound{
 					Entity: "Product",
@@ -37,7 +44,11 @@ func (app *Application) CreateFactor(accId uint, productIds []uint) (models.Fact
 
 	sumPrice := uint(0)
 	for _, product := range products {
-		sumPrice += product.Price
+		p, _ := lo.Find(factorProducts, func(fp models.FactorProduct) bool {
+			return product.Id == fp.ProductId
+		})
+
+		sumPrice += (product.Price * p.Count)
 	}
 
 	if account.Charge < sumPrice {
@@ -47,7 +58,7 @@ func (app *Application) CreateFactor(accId uint, productIds []uint) (models.Fact
 		}
 	}
 
-	factor, err = app.DB.CreateFactor(models.NewFactor{Products: productIDsFromProducts(products), AccountId: accId})
+	factor, err = app.DB.CreateFactor(models.NewFactor{Products: factorProducts, AccountId: accId})
 	if err != nil {
 		return factor, err
 	}
@@ -57,12 +68,4 @@ func (app *Application) CreateFactor(accId uint, productIds []uint) (models.Fact
 
 func (app *Application) ListFactors() []models.Factor {
 	return app.DB.ListFactors()
-}
-
-func productIDsFromProducts(products []models.Product) []uint {
-	var ids []uint
-	for _, p := range products {
-		ids = append(ids, p.Id)
-	}
-	return ids
 }

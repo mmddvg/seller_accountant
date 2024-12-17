@@ -96,21 +96,21 @@ func TestCreateFactor(t *testing.T) {
 	assert.Equal(t, uint(100), account.Charge)
 
 	newFactor := models.NewFactor{
-		Products:  []uint{product1.Id, product2.Id},
+		Products:  []models.FactorProduct{{ProductId: product1.Id, Count: 1}, {ProductId: product2.Id, Count: 1}},
 		AccountId: account.Id,
 	}
 	factor, err := repo.CreateFactor(newFactor)
 	require.NoError(t, err)
 	assert.NotZero(t, factor.Id)
 	assert.Equal(t, account.Id, factor.AccountId)
-	assert.ElementsMatch(t, []uint{product1.Id, product2.Id}, factor.Products)
+	assert.ElementsMatch(t, []models.FactorProduct{{ProductId: product1.Id, Count: 1}, {ProductId: product2.Id, Count: 1}}, factor.Products)
 
 	account, err = repo.GetAccount(account.Id)
 	require.NoError(t, err)
 	assert.Equal(t, uint(20), account.Charge)
 
 	_, err = repo.CreateFactor(models.NewFactor{
-		Products:  []uint{product1.Id, product2.Id},
+		Products:  []models.FactorProduct{{ProductId: product1.Id, Count: 1}, {ProductId: product2.Id, Count: 1}},
 		AccountId: account.Id,
 	})
 	assert.Error(t, err)

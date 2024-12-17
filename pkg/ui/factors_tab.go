@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"inventory/pkg/models"
 	"inventory/pkg/usecases"
 	"strconv"
 	"strings"
@@ -10,10 +11,12 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
+	"github.com/samber/lo"
 )
 
 func factorsTab(app *usecases.Application, window fyne.Window, refreshAccs chan bool) *fyne.Container {
 	factors := app.ListFactors()
+
 	factorsList := widget.NewList(
 		func() int {
 			return len(factors)
@@ -23,8 +26,13 @@ func factorsTab(app *usecases.Application, window fyne.Window, refreshAccs chan 
 		},
 		func(i widget.ListItemID, item fyne.CanvasObject) {
 			factor := factors[i]
+
+			var tmp string = ""
+			for _, v := range factor.Products {
+				tmp += v.ToStr() + " "
+			}
 			item.(*widget.Label).SetText(
-				fmt.Sprintf("ID: %d, Account ID: %d, Products: %v", factor.Id, factor.AccountId, factor.Products),
+				fmt.Sprintf("ID: %d, Account ID: %d, %v ", factor.Id, factor.AccountId, tmp),
 			)
 		},
 	)
@@ -64,7 +72,6 @@ func factorsTab(app *usecases.Application, window fyne.Window, refreshAccs chan 
 
 		refreshFactorsList()
 		refreshAccs <- true
-
 	})
 
 	return container.NewVBox(
@@ -77,14 +84,20 @@ func factorsTab(app *usecases.Application, window fyne.Window, refreshAccs chan 
 		factorsList,
 	)
 }
-func splitAndConvert(input string) []uint {
-	var ids []uint
+func splitAndConvert(input string) []models.FactorProduct {
+	res := []models.FactorProduct{}
 	for _, part := range strings.Split(input, ",") {
 		id, err := strconv.Atoi(strings.TrimSpace(part))
 		if err == nil {
-			ids = append(ids, uint(id))
+			_, index, ok := lo.FindIndexOf(res, func(fp models.FactorProduct) bool {
+				return fp.ProductId == uint(id)
+			})
+			if ok {
+				res[index].Count += 1
+			} else {
+				res = append(res, models.FactorProduct{ProductId: uint(id), Count: 1})
+			}
 		}
 	}
-
-	return ids
+	return res
 }

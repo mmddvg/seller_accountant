@@ -5,10 +5,12 @@ import (
 	"errors"
 	"inventory/pkg/apperrors"
 	"inventory/pkg/models"
+	"log"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/mattn/go-sqlite3"
+	"github.com/samber/lo"
 )
 
 type SqlxRepository struct {
@@ -144,14 +146,22 @@ func (repo *SqlxRepository) GetProducts(ids []uint) ([]models.Product, error) {
 func (repo *SqlxRepository) CreateFactor(newFactor models.NewFactor) (models.Factor, error) {
 	var factor models.Factor
 
-	products, err := repo.GetProducts(newFactor.Products)
+	var ids []uint
+	for _, v := range newFactor.Products {
+		ids = append(ids, v.ProductId)
+	}
+
+	products, err := repo.GetProducts(ids)
 	if err != nil {
 		return factor, err
 	}
 
 	totalPrice := uint(0)
 	for _, product := range products {
-		totalPrice += product.Price
+		tmp, _ := lo.Find(newFactor.Products, func(arg models.FactorProduct) bool {
+			return arg.ProductId == product.Id
+		})
+		totalPrice += (product.Price * tmp.Count)
 	}
 
 	account, err := repo.GetAccount(newFactor.AccountId)
@@ -178,9 +188,12 @@ func (repo *SqlxRepository) CreateFactor(newFactor models.NewFactor) (models.Fac
 		return factor, err
 	}
 
-	query = `INSERT INTO factor_products (factor_id, product_id) VALUES (?, ?)`
+	query = `INSERT INTO factor_products (factor_id, product_id,count) VALUES (?, ?,?)`
 	for _, product := range products {
-		_, err = tx.Exec(query, factor.Id, product.Id)
+		fp, _ := lo.Find(newFactor.Products, func(arg models.FactorProduct) bool {
+			return arg.ProductId == product.Id
+		})
+		_, err = tx.Exec(query, factor.Id, product.Id, fp.Count)
 		if err != nil {
 			tx.Rollback()
 			return factor, err
@@ -195,7 +208,7 @@ func (repo *SqlxRepository) CreateFactor(newFactor models.NewFactor) (models.Fac
 	}
 
 	tx.Commit()
-	factor.Products = productIDsFromProducts(products)
+	factor.Products = newFactor.Products
 	return factor, nil
 }
 
@@ -209,14 +222,6 @@ func isDuplicateErr(err error) bool {
 		return sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique
 	}
 	return strings.Contains(err.Error(), "UNIQUE constraint failed")
-}
-
-func productIDsFromProducts(products []models.Product) []uint {
-	var ids []uint
-	for _, p := range products {
-		ids = append(ids, p.Id)
-	}
-	return ids
 }
 
 func (r *SqlxRepository) UpdateProduct(productId uint, newPrice uint) (models.Product, error) {
@@ -246,21 +251,23 @@ func (r *SqlxRepository) UpdateProduct(productId uint, newPrice uint) (models.Pr
 
 func (repo *SqlxRepository) ListFactors() []models.Factor {
 	var factors []models.Factor
-	query := `SELECT id, account_id FROM factors;`
+	query := `SELECT * FROM factors;`
 
 	err := repo.DB.Select(&factors, query)
 	if err != nil {
+		log.Println("err : ", err)
 		return nil
 	}
 
 	for i := range factors {
-		var productIDs []uint
-		productQuery := `SELECT product_id FROM factor_products WHERE factor_id = ?;`
-		err := repo.DB.Select(&productIDs, productQuery, factors[i].Id)
+		var products []models.FactorProduct
+		productQuery := `SELECT product_id ,count FROM factor_products WHERE factor_id = ?;`
+		err := repo.DB.Select(&products, productQuery, factors[i].Id)
 		if err != nil {
+			log.Println("err: ", err)
 			return nil
 		}
-		factors[i].Products = productIDs
+		factors[i].Products = products
 	}
 
 	return factors

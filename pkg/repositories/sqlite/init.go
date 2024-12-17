@@ -35,7 +35,7 @@ const (
 	CREATE TABLE IF NOT EXISTS factor_products (
 		factor_id INTEGER NOT NULL,
 		product_id INTEGER NOT NULL,
-		PRIMARY KEY (factor_id, product_id),
+		count INTEGER NOT NULL DEFAULT 1,
 		FOREIGN KEY (factor_id) REFERENCES factors(id),
 		FOREIGN KEY (product_id) REFERENCES products(id)
 	);`
