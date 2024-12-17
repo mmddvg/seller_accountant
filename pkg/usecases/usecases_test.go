@@ -1,108 +1,83 @@
 package usecases_test
 
-// import (
-// 	"errors"
-// 	"inventory/pkg/apperrors"
-// 	"inventory/pkg/models"
-// 	"inventory/pkg/usecases"
-// 	"testing"
+import (
+	"inventory/pkg/models"
+	"inventory/pkg/repositories/sqlite"
+	"inventory/pkg/usecases"
+	"log"
+	"os"
+	"testing"
 
-// 	"github.com/stretchr/testify/assert"
-// 	"github.com/stretchr/testify/mock"
-// )
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
-// func TestChargeAccount(t *testing.T) {
-// 	mockRepo := new(mocks.SqlxRepositoryMock)
-// 	app := usecases.Application{DB: mockRepo}
+var (
+	app usecases.Application
+)
 
-// 	account := models.Account{Id: 1, Name: "Test Account", Charge: 100}
+func TestMain(m *testing.M) {
+	db, err := sqlite.InitializeDatabase("test.db")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-// 	mockRepo.On("GetAccount", uint(1)).Return(account, nil).Once()
-// 	mockRepo.On("ChargeAccount", uint(1), uint(50)).Return(models.Account{Id: 1, Name: "Test Account", Charge: 150}, nil).Once()
+	app = usecases.Application{DB: sqlite.NewSqlxRepository(db)}
 
-// 	updatedAccount, err := app.ChargeAccount(1, 50)
-// 	assert.NoError(t, err)
-// 	assert.Equal(t, uint(150), updatedAccount.Charge)
+	exitCode := m.Run()
 
-// 	mockRepo.AssertExpectations(t)
-// }
+	err = os.Remove("test.db")
+	if err != nil {
+		log.Println("error deleting db :  ", err)
+	}
 
-// func TestChargeAccount_InvalidAccount(t *testing.T) {
-// 	mockRepo := new(mocks.SqlxRepositoryMock)
-// 	app := usecases.Application{DB: mockRepo}
+	os.Exit(exitCode)
 
-// 	mockRepo.On("GetAccount", uint(2)).Return(models.Account{}, errors.New("account not found")).Once()
+}
 
-// 	_, err := app.ChargeAccount(2, 50)
-// 	assert.Error(t, err)
-// 	assert.EqualError(t, err, "account not found")
+func TestChargeAccount_InvalidAccount(t *testing.T) {
+	_, err := app.ChargeAccount(1532, 50)
+	assert.Error(t, err)
 
-// 	mockRepo.AssertExpectations(t)
-// }
+	assert.EqualError(t, err, "Account with id : 1532 not found")
+}
 
-// func TestLogin(t *testing.T) {
-// 	app := usecases.Application{}
+func TestLogin(t *testing.T) {
+	assert.True(t, app.Login("admin", "password"))
+	assert.False(t, app.Login("user", "wrongpassword"))
+}
 
-// 	assert.True(t, app.Login("admin", "password"))
-// 	assert.False(t, app.Login("user", "wrongpassword"))
-// }
+func TestChargeAccount(t *testing.T) {
+	acc, err := app.CreateAccount("test account1")
+	require.NoError(t, err)
 
-// func TestCreateFactor_Success(t *testing.T) {
-// 	mockRepo := new(mocks.SqlxRepositoryMock)
-// 	app := usecases.Application{DB: mockRepo}
+	acc, err = app.ChargeAccount(acc.Id, 100)
+	require.NoError(t, err)
 
-// 	account := models.Account{Id: 1, Name: "Test Account", Charge: 200}
-// 	products := []models.Product{
-// 		{Id: 1, Name: "Product 1", Price: 50},
-// 		{Id: 2, Name: "Product 2", Price: 100},
-// 	}
+	assert.Equal(t, uint(100), acc.Charge)
+}
 
-// 	mockRepo.On("GetAccount", uint(1)).Return(account, nil).Once()
-// 	mockRepo.On("GetProducts", []uint{1, 2}).Return(products, nil).Once()
-// 	mockRepo.On("CreateFactor", mock.Anything).Return(models.Factor{Id: 1}, nil).Once()
+func TestSale(t *testing.T) {
+	// prepare
+	acc, _ := app.CreateAccount("test account2")
+	acc, _ = app.ChargeAccount(acc.Id, 1000)
 
-// 	factor, err := app.CreateFactor(1, []uint{1, 2})
-// 	assert.NoError(t, err)
-// 	assert.Equal(t, uint(1), factor.Id)
+	prod1, err := app.CreateProduct(models.NewProduct{Name: "product 1", Price: 30})
+	require.NoError(t, err)
 
-// 	mockRepo.AssertExpectations(t)
-// }
+	prod2, err := app.CreateProduct(models.NewProduct{Name: "product 2", Price: 40})
+	require.NoError(t, err)
 
-// func TestCreateFactor_InsufficientFunds(t *testing.T) {
-// 	mockRepo := new(mocks.SqlxRepositoryMock)
-// 	app := usecases.Application{DB: mockRepo}
+	// test
 
-// 	account := models.Account{Id: 1, Name: "Test Account", Charge: 100}
-// 	products := []models.Product{
-// 		{Id: 1, Name: "Product 1", Price: 50},
-// 		{Id: 2, Name: "Product 2", Price: 100},
-// 	}
+	_, err = app.CreateFactor(acc.Id, []models.FactorProduct{{ProductId: 1315, Count: 12}})
+	require.Error(t, err, "Product with id : 10 not found")
 
-// 	mockRepo.On("GetAccount", uint(1)).Return(account, nil).Once()
-// 	mockRepo.On("GetProducts", []uint{1, 2}).Return(products, nil).Once()
+	factor, err := app.CreateFactor(acc.Id, []models.FactorProduct{{ProductId: prod1.Id, Count: 5}, {ProductId: prod2.Id, Count: 7}})
+	require.NoError(t, err)
 
-// 	_, err := app.CreateFactor(1, []uint{1, 2})
-// 	assert.Error(t, err)
-// 	assert.IsType(t, apperrors.InvalidCredit{}, err)
+	require.Equal(t, uint(5), factor.Products[0].Count)
 
-// 	mockRepo.AssertExpectations(t)
-// }
-
-// func TestCreateFactor_ProductNotFound(t *testing.T) {
-// 	mockRepo := new(mocks.SqlxRepositoryMock)
-// 	app := usecases.Application{DB: mockRepo}
-
-// 	account := models.Account{Id: 1, Name: "Test Account", Charge: 200}
-// 	products := []models.Product{
-// 		{Id: 1, Name: "Product 1", Price: 50},
-// 	}
-
-// 	mockRepo.On("GetAccount", uint(1)).Return(account, nil).Once()
-// 	mockRepo.On("GetProducts", []uint{1, 2}).Return(products, nil).Once()
-
-// 	_, err := app.CreateFactor(1, []uint{1, 2})
-// 	assert.Error(t, err)
-// 	assert.IsType(t, apperrors.NotFound{}, err)
-
-// 	mockRepo.AssertExpectations(t)
-// }
+	_, err = app.CreateFactor(acc.Id, []models.FactorProduct{{ProductId: prod1.Id, Count: 10000}})
+	require.Error(t, err)
+}
