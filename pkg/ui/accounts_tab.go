@@ -11,97 +11,39 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// accountsTab := func() *fyne.Container {
-// 	accounts := app.ListAccounts()
-// 	accountsList = widget.NewList(
-// 		func() int { return len(accounts) },
-// 		func() fyne.CanvasObject { return widget.NewLabel("") },
-// 		func(i widget.ListItemID, item fyne.CanvasObject) {
-// 			item.(*widget.Label).SetText(
-// 				fmt.Sprintf("ID: %d, Name: %s, Balance: %d", accounts[i].Id, accounts[i].Name, accounts[i].Charge),
-// 			)
-// 		},
-// 	)
+func accountsTab(app *usecases.Application, window fyne.Window, writer chan<- bool, reader <-chan bool) *fyne.Container {
+	table, updateTable := customersGrid(app)
 
-// 	nameEntry := widget.NewEntry()
-// 	nameEntry.SetPlaceHolder("Account Name")
-// 	createBtn := widget.NewButton("Create Account", func() {
-// 		name := nameEntry.Text
-// 		if name == "" {
-// 			dialog.ShowError(fmt.Errorf("account name cannot be empty"), mainWindow)
-// 			return
-// 		}
-// 		_, err := app.CreateAccount(name)
-// 		if err != nil {
-// 			dialog.ShowError(err, mainWindow)
-// 		}
-// 		nameEntry.SetText("")
-// 		refreshAccountsList()
-// 	})
+	nameEntry, createBtn := createCustomer(window, app, updateTable)
 
-// 	idEntry := widget.NewEntry()
-// 	idEntry.SetPlaceHolder("Account ID")
-// 	chargeEntry := widget.NewEntry()
-// 	chargeEntry.SetPlaceHolder("New Balance")
-// 	updateBtn := widget.NewButton("Update Balance", func() {
-// 		id, err := strconv.Atoi(idEntry.Text)
-// 		if err != nil {
-// 			dialog.ShowError(fmt.Errorf("invalid entry"), mainWindow)
-// 			return
-// 		}
-// 		balance, err := strconv.Atoi(chargeEntry.Text)
-// 		if err != nil {
-// 			dialog.ShowError(fmt.Errorf("invalid entry"), mainWindow)
-// 			return
-// 		}
-// 		_, err = app.ChargeAccount(uint(id), uint(balance))
-// 		if err != nil {
-// 			dialog.ShowError(err, mainWindow)
-// 		}
-// 		idEntry.SetText("")
-// 		chargeEntry.SetText("")
-// 		refreshAccountsList()
-// 	})
+	idEntry, chargeEntry, updateBtn := updateCustomer(window, app, updateTable)
 
-// 	return container.NewVBox(
-// 		widget.NewLabel("Accounts"),
-// 		accountsList,
-// 		widget.NewSeparator(),
-// 		widget.NewLabel("Add Account"),
-// 		nameEntry,
-// 		createBtn,
-// 		widget.NewSeparator(),
-// 		widget.NewLabel("Update Account Balance"),
-// 		idEntry,
-// 		chargeEntry,
-// 		updateBtn,
-// 	)
-// }
+	go func() {
+		for range reader {
+			updateTable()
+		}
+	}()
 
-func accountsTab(app *usecases.Application, window fyne.Window, ref chan bool) *fyne.Container {
-
-	accounts := app.ListAccounts()
-	accountsList := widget.NewList(
-		func() int {
-			return len(accounts)
-		},
-		func() fyne.CanvasObject {
-			return widget.NewLabel("")
-		},
-		func(i widget.ListItemID, item fyne.CanvasObject) {
-			item.(*widget.Label).SetText(
-				fmt.Sprintf("ID: %d, Name: %s, Balance: %d", accounts[i].Id, accounts[i].Name, accounts[i].Charge),
-			)
-		},
+	return container.NewVBox(
+		widget.NewLabel("Customers"),
+		table,
+		widget.NewSeparator(),
+		widget.NewLabel("Create Customer"),
+		nameEntry,
+		createBtn,
+		widget.NewSeparator(),
+		widget.NewLabel("Increase Customer Balance"),
+		idEntry,
+		chargeEntry,
+		updateBtn,
+		sell(app, window, writer),
 	)
+}
 
-	refreshList := func() {
-		accounts = app.ListAccounts()
-		accountsList.Refresh()
-	}
-
+func createCustomer(window fyne.Window, app *usecases.Application, updateTable func()) (*widget.Entry, *widget.Button) {
 	nameEntry := widget.NewEntry()
 	nameEntry.SetPlaceHolder("Account Name")
+
 	createBtn := widget.NewButton("Create Account", func() {
 		name := nameEntry.Text
 		if name == "" {
@@ -113,13 +55,18 @@ func accountsTab(app *usecases.Application, window fyne.Window, ref chan bool) *
 			dialog.ShowError(err, window)
 		}
 		nameEntry.SetText("")
-		refreshList()
+		updateTable()
 	})
+	return nameEntry, createBtn
+}
 
+func updateCustomer(window fyne.Window, app *usecases.Application, updateTable func()) (*widget.Entry, *widget.Entry, *widget.Button) {
 	idEntry := widget.NewEntry()
 	idEntry.SetPlaceHolder("Account ID")
+
 	chargeEntry := widget.NewEntry()
 	chargeEntry.SetPlaceHolder("Balance")
+
 	updateBtn := widget.NewButton("Update Balance", func() {
 		id, err := strconv.Atoi(idEntry.Text)
 		if err != nil {
@@ -137,26 +84,74 @@ func accountsTab(app *usecases.Application, window fyne.Window, ref chan bool) *
 		}
 		idEntry.SetText("")
 		chargeEntry.SetText("")
-		refreshList()
+		updateTable()
 	})
 
-	go func() {
-		for range ref {
-			refreshList()
-		}
-	}()
+	return idEntry, chargeEntry, updateBtn
+}
+func customersGrid(app *usecases.Application) (*container.Scroll, func()) {
+	gridContainer := container.NewVBox()
 
-	return container.NewVBox(
-		widget.NewLabel("Accounts"),
-		accountsList,
-		widget.NewSeparator(),
-		widget.NewLabel("Add Account"),
+	scroll := container.NewScroll(gridContainer)
+
+	refreshGrid := func() {
+		gridContainer.Objects = nil
+
+		headers := container.NewHBox(
+			widget.NewLabelWithStyle("ID", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			widget.NewLabelWithStyle("Name", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			widget.NewLabelWithStyle("Balance", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		)
+		gridContainer.Add(headers)
+
+		accounts := app.ListAccounts()
+		for _, account := range accounts {
+			row := container.NewHBox(
+				widget.NewLabel(fmt.Sprintf("%d", account.ID)),
+				widget.NewLabel(account.Name),
+				widget.NewLabel(fmt.Sprintf("%d", account.Charge)),
+			)
+			gridContainer.Add(row)
+		}
+
+		gridContainer.Refresh()
+	}
+
+	refreshGrid()
+
+	scroll.SetMinSize(fyne.NewSize(200, 200))
+	return scroll, refreshGrid
+}
+
+func sell(app *usecases.Application, window fyne.Window, writer chan<- bool) *fyne.Container {
+
+	nameEntry := widget.NewEntry()
+	nameEntry.SetPlaceHolder("customer name ")
+	priceEntry := widget.NewEntry()
+	priceEntry.SetPlaceHolder("price")
+
+	sellBtn := widget.NewButton("sell", func() {
+		price, err := strconv.ParseUint(priceEntry.Text, 10, 0)
+		if err != nil {
+			dialog.ShowError(err, window)
+			return
+		}
+		err = app.Sell(nameEntry.Text, uint(price))
+		if err != nil {
+			dialog.ShowError(err, window)
+			return
+		}
+		nameEntry.SetText("")
+		priceEntry.SetText("")
+
+		writer <- true
+
+	})
+	content := container.NewVBox(
 		nameEntry,
-		createBtn,
-		widget.NewSeparator(),
-		widget.NewLabel("Update Account Balance"),
-		idEntry,
-		chargeEntry,
-		updateBtn,
+		priceEntry,
+		sellBtn,
 	)
+
+	return content
 }

@@ -1,15 +1,16 @@
 package models
 
-type Database interface {
-	CreateAccount(name string) (Account, error)
-	ListAccounts() []Account
-	GetAccount(uint) (Account, error)
-	ChargeAccount(userId uint, amount uint) (Account, error)
-
-	CreateProduct(NewProduct) (Product, error)
-	UpdateProduct(prodId uint, price uint) (Product, error)
-	CreateFactor(NewFactor) (Factor, error)
-	ListFactors() []Factor
-	ListProducts() []Product
-	GetProducts([]uint) ([]Product, error)
+type Repository interface {
+	CreateCustomer(name string) (Customer, error)
+	GetAllCustomers() []Customer
+	GetCustomerByID(id uint) (Customer, error)
+	CreatePurchase(factors []Factor) (Purchase, error)
+	GetPurchaseByID(id uint) (Purchase, error)
+	GetAllPurchases() ([]Purchase, error)
+	GetAllFactors() ([]Factor, error)
+	CreateSale(customerID int, price uint64) (Sale, error)
+	GetSales() ([]Sale, error)
+	Charge(customerId int, charge uint) (Customer, error)
+	GetNetProfit() (int, error)
+	GetCustomerByName(string) (Customer, error)
 }

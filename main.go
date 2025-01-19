@@ -11,12 +11,12 @@ import (
 )
 
 func main() {
-	db, err := sqlite.InitializeDatabase("tmp.sql")
+	db, err := sqlite.InitializeDatabase("db.sql")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	appInstance := usecases.Application{DB: sqlite.NewSqlxRepository(db)}
+	appInstance := usecases.NewApp(sqlite.NewSqlxRepository(db))
 
 	app := app.New()
 	window := app.NewWindow("Login")

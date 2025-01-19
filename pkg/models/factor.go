@@ -1,23 +1,31 @@
 package models
 
-import "fmt"
+import (
+	"database/sql"
+	"fmt"
+	"time"
 
-type FactorProduct struct {
-	ProductId uint `db:"product_id"`
-	Count     uint `db:"count"`
-}
-
-func (fp FactorProduct) ToStr() string {
-	return fmt.Sprintf(" (product : %d , count : %d )", fp.ProductId, fp.Count)
-}
-
-type NewFactor struct {
-	Products  []FactorProduct
-	AccountId uint
-}
+	"github.com/samber/lo"
+)
 
 type Factor struct {
-	Id        uint `db:"id"`
-	Products  []FactorProduct
-	AccountId uint `db:"account_id"`
+	ID         int            `db:"id"`
+	PurchaseID int            `db:"purchase_id"`
+	StoreName  string         `db:"store_name"`
+	Price      int            `db:"price"`
+	FileName   sql.NullString `db:"file_name"`
+}
+
+func (f *Factor) String() string {
+	return fmt.Sprintf("name : %s , price : %d ", f.StoreName, f.Price)
+}
+
+type Purchase struct {
+	ID        int       `db:"id"`
+	CreatedAt time.Time `db:"created_at"`
+	Factors   []Factor
+}
+
+func (p *Purchase) String() string {
+	return fmt.Sprintf("id : %d , factors : %s , created at : %s", p.ID, lo.Reduce(p.Factors, func(agg string, f Factor, i int) string { return agg + " " + f.String() }, "[ ")+" ]", p.CreatedAt.String())
 }

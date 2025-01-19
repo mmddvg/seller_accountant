@@ -10,42 +10,40 @@ import (
 )
 
 const (
-	createAccountsTable = `
-	CREATE TABLE IF NOT EXISTS accounts (
+	createCustomersTable = `
+	CREATE TABLE IF NOT EXISTS customers (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT UNIQUE NOT NULL,
 		charge INTEGER NOT NULL
 	);`
 
+	createPurchasesTable = `
+	CREATE TABLE IF NOT EXISTS purchases (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		created_at TIMESTAMP NOT NULL
+	);`
+
 	createFactorsTable = `
 	CREATE TABLE IF NOT EXISTS factors (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		account_id INTEGER NOT NULL,
-		FOREIGN KEY (account_id) REFERENCES accounts(id)
+		purchase_id INTEGER NOT NULL,
+		store_name TEXT NOT NULL,
+		price INTEGER NOT NULL,
+		file_name TEXT,
+		FOREIGN KEY(purchase_id) REFERENCES purchases(id)
 	);`
 
-	createProductsTable = `
-	CREATE TABLE IF NOT EXISTS products (
+	createSalesTable = `
+	CREATE TABLE IF NOT EXISTS sales (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT UNIQUE NOT NULL,
-		price INTEGER NOT NULL
-	);`
-
-	createFactorProductsTable = `
-	CREATE TABLE IF NOT EXISTS factor_products (
-		factor_id INTEGER NOT NULL,
-		product_id INTEGER NOT NULL,
-		count INTEGER NOT NULL DEFAULT 1,
-		FOREIGN KEY (factor_id) REFERENCES factors(id),
-		FOREIGN KEY (product_id) REFERENCES products(id)
+		customer_id INTEGER NOT NULL,
+		price INTEGER NOT NULL, -- Sale price with 10% markup
+		FOREIGN KEY(customer_id) REFERENCES customers(id)
 	);`
 )
 
-// Initialize the database
 func InitializeDatabase(filePath string) (*sqlx.DB, error) {
-	// Check if file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		// Create the file
 		file, err := os.Create(filePath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create file: %w", err)
@@ -71,17 +69,20 @@ func InitializeDatabase(filePath string) (*sqlx.DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	if _, err := db.Exec(createAccountsTable); err != nil {
-		return nil, fmt.Errorf("failed to create accounts table: %w", err)
+	if _, err := db.Exec(createCustomersTable); err != nil {
+		return nil, fmt.Errorf("failed to create customers table: %w", err)
 	}
+
+	if _, err := db.Exec(createPurchasesTable); err != nil {
+		return nil, fmt.Errorf("failed to create purchases table: %w", err)
+	}
+
 	if _, err := db.Exec(createFactorsTable); err != nil {
 		return nil, fmt.Errorf("failed to create factors table: %w", err)
 	}
-	if _, err := db.Exec(createProductsTable); err != nil {
-		return nil, fmt.Errorf("failed to create products table: %w", err)
-	}
-	if _, err := db.Exec(createFactorProductsTable); err != nil {
-		return nil, fmt.Errorf("failed to create factor_products table: %w", err)
+
+	if _, err := db.Exec(createSalesTable); err != nil {
+		return nil, fmt.Errorf("failed to create sales table: %w", err)
 	}
 
 	log.Println("Database initialized and tables created")

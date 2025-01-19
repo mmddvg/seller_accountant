@@ -1,12 +1,7 @@
 package models
 
-type NewAccount struct {
-	Name   string
-	Charge uint
-}
-
-type Account struct {
-	Id     uint   `db:"id"`
+type Customer struct {
+	ID     int    `db:"id"`
 	Name   string `db:"name"`
-	Charge uint   `db:"charge"`
+	Charge int    `db:"charge"`
 }

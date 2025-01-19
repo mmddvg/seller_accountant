@@ -1,143 +1,183 @@
 package sqlite_test
 
 import (
-	"inventory/pkg/apperrors"
 	"inventory/pkg/models"
 	"inventory/pkg/repositories/sqlite"
-	"math/rand"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+func setupTestDB(t *testing.T) *sqlx.DB {
+	id, err := uuid.NewV7()
+	assert.NoError(t, err)
 
-func randSeq(n int) string {
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+	db, err := sqlite.InitializeDatabase(id.String() + ".tmp.db")
+	assert.NoError(t, err)
+	return db
+}
+
+func TestCreateCustomer(t *testing.T) {
+	db := setupTestDB(t)
+	repo := sqlite.NewSqlxRepository(db)
+
+	name := "John Doe"
+	customer, err := repo.CreateCustomer(name)
+
+	assert.NoError(t, err)
+	assert.Equal(t, name, customer.Name)
+	assert.Equal(t, 0, customer.Charge)
+}
+
+func TestGetAllCustomers(t *testing.T) {
+	db := setupTestDB(t)
+	repo := sqlite.NewSqlxRepository(db)
+
+	db.MustExec("INSERT INTO customers (name, charge) VALUES (?, ?), (?, ?);", "Alice", 100, "Bob", 200)
+
+	customers := repo.GetAllCustomers()
+	assert.Len(t, customers, 2)
+	assert.Equal(t, "Alice", customers[0].Name)
+	assert.Equal(t, 100, customers[0].Charge)
+	assert.Equal(t, "Bob", customers[1].Name)
+	assert.Equal(t, 200, customers[1].Charge)
+}
+
+func TestGetCustomerByID(t *testing.T) {
+	db := setupTestDB(t)
+	repo := sqlite.NewSqlxRepository(db)
+
+	db.MustExec("INSERT INTO customers (id, name, charge) VALUES (?, ?, ?);", 1, "Charlie", 300)
+
+	customer, err := repo.GetCustomerByID(1)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "Charlie", customer.Name)
+	assert.Equal(t, 300, customer.Charge)
+}
+
+func TestCreatePurchase(t *testing.T) {
+	db := setupTestDB(t)
+	repo := sqlite.NewSqlxRepository(db)
+
+	factors := []models.Factor{
+		{StoreName: "Store1", Price: 50},
+		{StoreName: "Store2", Price: 100},
 	}
-	return string(b)
+
+	purchase, err := repo.CreatePurchase(factors)
+
+	assert.NoError(t, err)
+	assert.Len(t, purchase.Factors, 2)
+	assert.Equal(t, "Store1", purchase.Factors[0].StoreName)
+	assert.Equal(t, 50, purchase.Factors[0].Price)
+	assert.Equal(t, "Store2", purchase.Factors[1].StoreName)
+	assert.Equal(t, 100, purchase.Factors[1].Price)
 }
 
-func TestAccountCRUD(t *testing.T) {
-	db, err := sqlite.InitializeDatabase("./test.db")
-	require.NoError(t, err)
-	defer db.Close()
-
+func TestCreateSale(t *testing.T) {
+	db := setupTestDB(t)
 	repo := sqlite.NewSqlxRepository(db)
 
-	accountName := randSeq(10)
-	acc1, err := repo.CreateAccount(accountName)
-	require.NoError(t, err)
-	assert.NotZero(t, acc1.Id)
-	assert.Equal(t, accountName, acc1.Name)
-	assert.Equal(t, uint(0), acc1.Charge)
+	db.MustExec("INSERT INTO customers (id, name, charge) VALUES (?, ?, ?);", 1, "Dave", 500)
 
-	retrievedAcc, err := repo.GetAccount(acc1.Id)
-	require.NoError(t, err)
-	assert.Equal(t, acc1, retrievedAcc)
+	sale, err := repo.CreateSale(1, 300)
 
-	_, err = repo.CreateAccount(accountName)
-	assert.Error(t, err)
-	assert.IsType(t, apperrors.Duplicate{}, err)
+	assert.NoError(t, err)
+	assert.Equal(t, sale.CustomerId, uint(1))
 
-	_, err = repo.GetAccount(99999)
-	assert.Error(t, err)
-	assert.IsType(t, apperrors.NotFound{}, err)
+	var remainingCharge int
+	db.Get(&remainingCharge, "SELECT charge FROM customers WHERE id = ?;", 1)
+	assert.Equal(t, 200, remainingCharge)
 }
 
-func TestProductCRUD(t *testing.T) {
-	db, err := sqlite.InitializeDatabase("./test.db")
-	require.NoError(t, err)
-	defer db.Close()
-
+func TestGetNetProfit(t *testing.T) {
+	db := setupTestDB(t)
 	repo := sqlite.NewSqlxRepository(db)
 
-	productName := randSeq(10)
-	productPrice := uint(100)
-	newProduct := models.NewProduct{Name: productName, Price: productPrice}
-	prod1, err := repo.CreateProduct(newProduct)
-	require.NoError(t, err)
-	assert.NotZero(t, prod1.Id)
-	assert.Equal(t, productName, prod1.Name)
-	assert.Equal(t, productPrice, prod1.Price)
+	db.MustExec(`
+		INSERT INTO sales (id,  customer_id, price) VALUES (1, 1, 500), (2, 2, 700);
+		INSERT INTO factors (id, purchase_id, store_name, price) VALUES (1, 1, 'Store1', 300), (2, 1, 'Store2', 200);
+	`)
 
-	products := repo.ListProducts()
-	assert.NotEmpty(t, products)
-	assert.Contains(t, products, prod1)
+	netProfit, err := repo.GetNetProfit()
 
-	_, err = repo.CreateProduct(newProduct)
-	assert.Error(t, err)
-	assert.IsType(t, apperrors.Duplicate{}, err)
-
-	_, err = repo.GetProducts([]uint{99999})
-	assert.Error(t, err)
-	assert.IsType(t, apperrors.NotFound{}, err)
+	assert.NoError(t, err)
+	assert.Equal(t, 700, netProfit)
 }
 
-func TestCreateFactor(t *testing.T) {
-	db, err := sqlite.InitializeDatabase("./test.db")
-	require.NoError(t, err)
-	defer db.Close()
-
+func TestGetPurchaseByID(t *testing.T) {
+	db := setupTestDB(t)
 	repo := sqlite.NewSqlxRepository(db)
 
-	account, err := repo.CreateAccount(randSeq(10))
-	require.NoError(t, err)
-	product1, err := repo.CreateProduct(models.NewProduct{Name: randSeq(10), Price: 50})
-	require.NoError(t, err)
-	product2, err := repo.CreateProduct(models.NewProduct{Name: randSeq(10), Price: 30})
-	require.NoError(t, err)
+	db.MustExec(`
+		INSERT INTO purchases (id, created_at) VALUES (1, ?);
+		INSERT INTO factors (purchase_id, store_name, price) VALUES (1, 'Store1', 100), (1, 'Store2', 200);
+	`, time.Now())
 
-	account, err = repo.ChargeAccount(account.Id, 100)
-	require.NoError(t, err)
-	assert.Equal(t, uint(100), account.Charge)
+	purchase, err := repo.GetPurchaseByID(1)
 
-	newFactor := models.NewFactor{
-		Products:  []models.FactorProduct{{ProductId: product1.Id, Count: 1}, {ProductId: product2.Id, Count: 1}},
-		AccountId: account.Id,
-	}
-	factor, err := repo.CreateFactor(newFactor)
-	require.NoError(t, err)
-	assert.NotZero(t, factor.Id)
-	assert.Equal(t, account.Id, factor.AccountId)
-	assert.ElementsMatch(t, []models.FactorProduct{{ProductId: product1.Id, Count: 1}, {ProductId: product2.Id, Count: 1}}, factor.Products)
-
-	account, err = repo.GetAccount(account.Id)
-	require.NoError(t, err)
-	assert.Equal(t, uint(20), account.Charge)
-
-	_, err = repo.CreateFactor(models.NewFactor{
-		Products:  []models.FactorProduct{{ProductId: product1.Id, Count: 1}, {ProductId: product2.Id, Count: 1}},
-		AccountId: account.Id,
-	})
-	assert.Error(t, err)
-	assert.IsType(t, apperrors.InvalidCredit{}, err)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(purchase.Factors))
+	assert.Equal(t, "Store1", purchase.Factors[0].StoreName)
+	assert.Equal(t, 100, purchase.Factors[0].Price)
 }
 
-func TestListAccounts(t *testing.T) {
-	db, err := sqlite.InitializeDatabase("./test.db")
-	require.NoError(t, err)
-	defer db.Close()
-
+func TestGetAllPurchases(t *testing.T) {
+	db := setupTestDB(t)
 	repo := sqlite.NewSqlxRepository(db)
 
-	account1, err := repo.CreateAccount(randSeq(10))
-	require.NoError(t, err)
-	account2, err := repo.CreateAccount(randSeq(10))
-	require.NoError(t, err)
+	db.MustExec(`
+		INSERT INTO purchases (id, created_at) VALUES (1, ?), (2, ?);
+		INSERT INTO factors (purchase_id, store_name, price) VALUES (1, 'Store1', 100), (2, 'Store2', 200);
+	`, time.Now(), time.Now())
 
-	res, err := db.DB.Query("SELECT COUNT(*) FROM accounts;")
-	require.NoError(t, err)
-	var count int
-	res.Next()
-	res.Scan(&count)
-	res.Close()
+	purchases, err := repo.GetAllPurchases()
 
-	accounts := repo.ListAccounts()
-	assert.Len(t, accounts, count)
-	assert.Contains(t, accounts, account1)
-	assert.Contains(t, accounts, account2)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(purchases))
+	assert.Equal(t, "Store1", purchases[0].Factors[0].StoreName)
+	assert.Equal(t, 100, purchases[0].Factors[0].Price)
+}
+
+func TestGetAllFactors(t *testing.T) {
+	db := setupTestDB(t)
+	repo := sqlite.NewSqlxRepository(db)
+
+	db.MustExec(`INSERT INTO factors (id, purchase_id, store_name, price) VALUES (1, 1, 'Store1', 100), (2, 1, 'Store2', 200);`)
+
+	factors, err := repo.GetAllFactors()
+
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(factors))
+	assert.Equal(t, "Store1", factors[0].StoreName)
+	assert.Equal(t, 100, factors[0].Price)
+}
+
+func TestCharge(t *testing.T) {
+	db := setupTestDB(t)
+	repo := sqlite.NewSqlxRepository(db)
+
+	db.MustExec("INSERT INTO customers (id, name, charge) VALUES (?, ?, ?);", 1, "Eve", 200)
+
+	customer, err := repo.Charge(1, 300)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 500, customer.Charge)
+}
+
+func TestGetSales(t *testing.T) {
+	db := setupTestDB(t)
+	repo := sqlite.NewSqlxRepository(db)
+
+	db.MustExec(`INSERT INTO sales (id,customer_id, price) VALUES (1, 1, 300), (2,2, 400);`)
+
+	sales, err := repo.GetSales()
+
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(sales))
+	assert.Equal(t, 300, sales[0].Price)
 }

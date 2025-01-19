@@ -3,10 +3,11 @@ package sqlite
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"inventory/pkg/apperrors"
 	"inventory/pkg/models"
-	"log"
 	"strings"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/mattn/go-sqlite3"
@@ -21,16 +22,16 @@ func NewSqlxRepository(db *sqlx.DB) *SqlxRepository {
 	return &SqlxRepository{DB: db}
 }
 
-func (repo *SqlxRepository) CreateAccount(name string) (models.Account, error) {
-	var account models.Account
+func (repo *SqlxRepository) CreateCustomer(name string) (models.Customer, error) {
+	var account models.Customer
 
-	query := `INSERT INTO accounts (name, charge) VALUES (?, ?) RETURNING id, name, charge;`
-	err := repo.DB.QueryRow(query, name, 0).Scan(&account.Id, &account.Name, &account.Charge)
+	query := `INSERT INTO customers(name, charge) VALUES (?, 0) RETURNING *;`
+	err := repo.DB.Get(&account, query, name, 0)
 	if err != nil {
 		if isDuplicateErr(err) {
 			return account, apperrors.Duplicate{
-				Entity: "Account",
-				Id:     account.Id,
+				Entity: "customer",
+				Id:     uint(account.ID),
 			}
 		}
 		return account, err
@@ -39,9 +40,9 @@ func (repo *SqlxRepository) CreateAccount(name string) (models.Account, error) {
 	return account, nil
 }
 
-func (repo *SqlxRepository) ListAccounts() []models.Account {
-	var accounts []models.Account
-	query := `SELECT * FROM accounts;`
+func (repo *SqlxRepository) GetAllCustomers() []models.Customer {
+	var accounts []models.Customer
+	query := `SELECT * FROM customers;`
 	err := repo.DB.Select(&accounts, query)
 	if err != nil {
 		return nil
@@ -49,15 +50,15 @@ func (repo *SqlxRepository) ListAccounts() []models.Account {
 	return accounts
 }
 
-func (repo *SqlxRepository) GetAccount(id uint) (models.Account, error) {
-	var account models.Account
-	query := `SELECT id, name, charge FROM accounts WHERE id = ?`
+func (repo *SqlxRepository) GetCustomerByID(id uint) (models.Customer, error) {
+	var account models.Customer
+	query := `SELECT * FROM customers WHERE id = ?`
 	err := repo.DB.Get(&account, query, id)
 	if err != nil {
 		if isNotFoundErr(err) {
 			return account, apperrors.NotFound{
-				Entity: "Account",
-				Id:     id,
+				Entity: "Customer",
+				Id:     fmt.Sprint(id),
 			}
 		}
 		return account, err
@@ -65,151 +66,124 @@ func (repo *SqlxRepository) GetAccount(id uint) (models.Account, error) {
 	return account, nil
 }
 
-func (repo *SqlxRepository) ChargeAccount(userId uint, amount uint) (models.Account, error) {
-	account, err := repo.GetAccount(userId)
+func (repo *SqlxRepository) CreatePurchase(factors []models.Factor) (models.Purchase, error) {
+
+	purchase := models.Purchase{Factors: make([]models.Factor, len(factors))}
+	query := `INSERT INTO purchases(created_at) VALUES (?) RETURNING *;`
+	err := repo.DB.Get(&purchase, query, time.Now())
 	if err != nil {
-		return account, err
+		return models.Purchase{}, err
 	}
 
-	newCharge := account.Charge + amount
-	query := `UPDATE accounts SET charge = ? WHERE id = ?`
-	_, err = repo.DB.Exec(query, newCharge, userId)
-	if err != nil {
-		return account, err
-	}
-
-	account.Charge = newCharge
-	return account, nil
-}
-
-func (repo *SqlxRepository) CreateProduct(newProduct models.NewProduct) (models.Product, error) {
-	var product models.Product
-
-	query := `INSERT INTO products (name, price) VALUES (?, ?) RETURNING id, name, price`
-	err := repo.DB.QueryRow(query, newProduct.Name, newProduct.Price).Scan(&product.Id, &product.Name, &product.Price)
-	if err != nil {
-		if isDuplicateErr(err) {
-			return product, apperrors.Duplicate{
-				Entity: "Product",
-				Id:     product.Id,
-			}
-		}
-		return product, err
-	}
-
-	return product, nil
-}
-func (repo *SqlxRepository) ListProducts() []models.Product {
-	var products []models.Product
-	query := `SELECT id, name, price FROM products`
-	err := repo.DB.Select(&products, query)
-	if err != nil {
-		return nil
-	}
-	return products
-}
-
-func (repo *SqlxRepository) GetProducts(ids []uint) ([]models.Product, error) {
-	var products []models.Product
-
-	query := `SELECT id, name, price FROM products WHERE id IN (?)`
-	query, args, err := sqlx.In(query, ids)
-	if err != nil {
-		return nil, err
-	}
-	query = repo.DB.Rebind(query)
-
-	err = repo.DB.Select(&products, query, args...)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(products) != len(ids) {
-		existingIDs := make(map[uint]bool)
-		for _, p := range products {
-			existingIDs[p.Id] = true
-		}
-
-		for _, id := range ids {
-			if !existingIDs[id] {
-				return nil, apperrors.NotFound{
-					Entity: "Product",
-					Id:     id,
-				}
-			}
-		}
-	}
-
-	return products, nil
-}
-
-func (repo *SqlxRepository) CreateFactor(newFactor models.NewFactor) (models.Factor, error) {
-	var factor models.Factor
-
-	var ids []uint
-	for _, v := range newFactor.Products {
-		ids = append(ids, v.ProductId)
-	}
-
-	products, err := repo.GetProducts(ids)
-	if err != nil {
-		return factor, err
-	}
-
-	totalPrice := uint(0)
-	for _, product := range products {
-		tmp, _ := lo.Find(newFactor.Products, func(arg models.FactorProduct) bool {
-			return arg.ProductId == product.Id
-		})
-		totalPrice += (product.Price * tmp.Count)
-	}
-
-	account, err := repo.GetAccount(newFactor.AccountId)
-	if err != nil {
-		return factor, err
-	}
-
-	if account.Charge < totalPrice {
-		return factor, apperrors.InvalidCredit{
-			Have: account.Charge,
-			Need: totalPrice,
-		}
-	}
-
-	tx, err := repo.DB.Beginx()
-	if err != nil {
-		return factor, err
-	}
-
-	query := `INSERT INTO factors (account_id) VALUES (?) RETURNING id, account_id`
-	err = tx.QueryRow(query, newFactor.AccountId).Scan(&factor.Id, &factor.AccountId)
-	if err != nil {
-		tx.Rollback()
-		return factor, err
-	}
-
-	query = `INSERT INTO factor_products (factor_id, product_id,count) VALUES (?, ?,?)`
-	for _, product := range products {
-		fp, _ := lo.Find(newFactor.Products, func(arg models.FactorProduct) bool {
-			return arg.ProductId == product.Id
-		})
-		_, err = tx.Exec(query, factor.Id, product.Id, fp.Count)
+	for i, v := range factors {
+		err := repo.DB.Get(&purchase.Factors[i], `INSERT INTO factors(purchase_id,store_name,price) VALUES(?,?,?) RETURNING *;`, purchase.ID, v.StoreName, v.Price)
 		if err != nil {
-			tx.Rollback()
-			return factor, err
+
+			return models.Purchase{}, err
 		}
+
 	}
 
-	query = `UPDATE accounts SET charge = charge - ? WHERE id = ?`
-	_, err = tx.Exec(query, totalPrice, newFactor.AccountId)
+	return purchase, nil
+}
+
+func (repo *SqlxRepository) GetPurchaseByID(id uint) (models.Purchase, error) {
+	var purchase models.Purchase
+	query := `SELECT * FROM purchases WHERE id = ?;`
+	err := repo.DB.Get(&purchase, query, id)
 	if err != nil {
-		tx.Rollback()
-		return factor, err
+		if isNotFoundErr(err) {
+			return purchase, apperrors.NotFound{
+				Entity: "Customer",
+				Id:     fmt.Sprint(id),
+			}
+		}
+		return purchase, err
 	}
 
-	tx.Commit()
-	factor.Products = newFactor.Products
-	return factor, nil
+	err = repo.DB.Select(&purchase.Factors, `SELECT * FROM factors WHERE purchase_id = ?;`, purchase.ID)
+	return purchase, err
+}
+
+func (repo *SqlxRepository) GetAllPurchases() ([]models.Purchase, error) {
+	var purchases []models.Purchase
+	query := `SELECT * FROM purchases;`
+	err := repo.DB.Select(&purchases, query)
+	if err != nil {
+
+		return purchases, err
+	}
+
+	for i := range purchases {
+		err = repo.DB.Select(&purchases[i].Factors, "SELECT * FROM factors WHERE purchase_id = ?;", purchases[i].ID)
+	}
+	return purchases, err
+}
+
+func (repo *SqlxRepository) GetAllFactors() ([]models.Factor, error) {
+	factors := []models.Factor{}
+	err := repo.DB.Select(&factors, "SELECT * FROM factors;")
+	return factors, err
+}
+
+func (repo *SqlxRepository) CreateSale(customerID int, price uint64) (models.Sale, error) {
+	sale := models.Sale{}
+
+	err := repo.DB.Get(&sale, "INSERT INTO sales(customer_id,price) VALUES(?,?) RETURNING *;", customerID, price)
+	if err != nil {
+		return sale, err
+	}
+
+	_, err = repo.DB.Exec("UPDATE customers SET charge = (charge - ?) WHERE id = ?;", price, customerID)
+
+	return sale, err
+}
+
+func (repo *SqlxRepository) GetSales() ([]models.Sale, error) {
+	sales := []models.Sale{}
+	err := repo.DB.Select(&sales, "SELECT * FROM sales;")
+	return sales, err
+}
+
+func (repo *SqlxRepository) Charge(customerId int, charge uint) (models.Customer, error) {
+	customer := models.Customer{}
+	err := repo.DB.Get(&customer, "UPDATE customers SET charge = (charge + ?) WHERE id = ? RETURNING *;", charge, customerId)
+	return customer, err
+}
+
+func (repo *SqlxRepository) GetNetProfit() (int, error) {
+	sales, err := repo.GetSales()
+	if err != nil {
+		return 0, err
+	}
+
+	var overallSale int = lo.SumBy(sales, func(sale models.Sale) int { return sale.Price })
+
+	factors, err := repo.GetAllFactors()
+	if err != nil {
+		return 0, nil
+	}
+
+	overallSpent := lo.SumBy(factors, func(factor models.Factor) int { return factor.Price })
+	return overallSale - overallSpent, nil
+}
+
+func (repo *SqlxRepository) GetCustomerByName(name string) (models.Customer, error) {
+	var customer models.Customer
+
+	err := repo.DB.Get(&customer, "SELECT * FROM customers WHERE name = ?;", name)
+	if err != nil {
+		if isNotFoundErr(err) {
+			return customer, apperrors.NotFound{Entity: "Customer", Id: name}
+		}
+		return customer, err
+	}
+
+	if customer.Name != name {
+		return customer, apperrors.NotFound{Entity: "Customer", Id: name}
+
+	}
+	return customer, nil
 }
 
 func isNotFoundErr(err error) bool {
@@ -222,53 +196,4 @@ func isDuplicateErr(err error) bool {
 		return sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique
 	}
 	return strings.Contains(err.Error(), "UNIQUE constraint failed")
-}
-
-func (r *SqlxRepository) UpdateProduct(productId uint, newPrice uint) (models.Product, error) {
-	var product models.Product
-
-	querySelect := "SELECT id, name, price FROM products WHERE id = ?"
-	err := r.DB.Get(&product, querySelect, productId)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return product, apperrors.NotFound{
-				Entity: "Product",
-				Id:     productId,
-			}
-		}
-		return product, err
-	}
-
-	queryUpdate := "UPDATE products SET price = ? WHERE id = ?"
-	_, err = r.DB.Exec(queryUpdate, newPrice, productId)
-	if err != nil {
-		return product, err
-	}
-
-	product.Price = newPrice
-	return product, nil
-}
-
-func (repo *SqlxRepository) ListFactors() []models.Factor {
-	var factors []models.Factor
-	query := `SELECT * FROM factors;`
-
-	err := repo.DB.Select(&factors, query)
-	if err != nil {
-		log.Println("err : ", err)
-		return nil
-	}
-
-	for i := range factors {
-		var products []models.FactorProduct
-		productQuery := `SELECT product_id ,count FROM factor_products WHERE factor_id = ?;`
-		err := repo.DB.Select(&products, productQuery, factors[i].Id)
-		if err != nil {
-			log.Println("err: ", err)
-			return nil
-		}
-		factors[i].Products = products
-	}
-
-	return factors
 }
