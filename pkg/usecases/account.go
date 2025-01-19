@@ -22,6 +22,7 @@ func (app *Application) ListAccounts() []models.Customer {
 }
 
 func (app *Application) GetSales() ([]models.Sale, error) {
+
 	return app.db.GetSales()
 }
 

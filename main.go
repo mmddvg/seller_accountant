@@ -18,7 +18,7 @@ func main() {
 
 	appInstance := usecases.NewApp(sqlite.NewSqlxRepository(db))
 
-	app := app.New()
+	app := app.NewWithID("accountant")
 	window := app.NewWindow("Login")
 	window.Resize(fyne.NewSize(600, 400))
 

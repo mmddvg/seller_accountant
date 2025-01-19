@@ -76,7 +76,7 @@ func (repo *SqlxRepository) CreatePurchase(factors []models.Factor) (models.Purc
 	}
 
 	for i, v := range factors {
-		err := repo.DB.Get(&purchase.Factors[i], `INSERT INTO factors(purchase_id,store_name,price) VALUES(?,?,?) RETURNING *;`, purchase.ID, v.StoreName, v.Price)
+		err := repo.DB.Get(&purchase.Factors[i], `INSERT INTO factors(purchase_id,store_name,price,file_name) VALUES(?,?,?,?) RETURNING *;`, purchase.ID, v.StoreName, v.Price, v.FileName)
 		if err != nil {
 
 			return models.Purchase{}, err

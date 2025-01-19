@@ -3,21 +3,25 @@ package ui
 import (
 	"database/sql"
 	"fmt"
+	"image"
 	"inventory/pkg/models"
 	"inventory/pkg/usecases"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
 
 func purchasesTab(app *usecases.Application, window fyne.Window, writer chan<- bool, reader <-chan bool) *fyne.Container {
 	purchasesGrid, updatePurchases := gridPurchases(app, window)
-	factorsEntry, filePickersContainer, createBtn := createPurchase(app, window, writer)
+	factorsContainer, createBtn := createPurchase(app, window, writer)
 
 	go func() {
 		for range reader {
@@ -25,21 +29,12 @@ func purchasesTab(app *usecases.Application, window fyne.Window, writer chan<- b
 		}
 	}()
 
-	inputSection := container.NewVBox(
-		widget.NewLabel("Add a Purchase"),
-		container.NewVBox(
-			widget.NewLabel("Factors (store:price, store:price)"),
-			factorsEntry,
-			filePickersContainer,
-		),
-		createBtn,
-	)
-
 	return container.NewVBox(
 		widget.NewLabel("Purchases"),
 		purchasesGrid,
 		widget.NewSeparator(),
-		inputSection,
+		factorsContainer,
+		createBtn,
 	)
 }
 
@@ -51,11 +46,10 @@ func gridPurchases(app *usecases.Application, window fyne.Window) (*container.Sc
 	refreshGrid := func() {
 		gridContainer.Objects = nil
 
-		headers := container.NewGridWithColumns(4,
+		headers := container.NewGridWithColumns(3,
 			widget.NewLabelWithStyle("ID", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 			widget.NewLabelWithStyle("Created At", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 			widget.NewLabelWithStyle("Factors", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-			widget.NewLabelWithStyle("Actions", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		)
 		gridContainer.Add(headers)
 
@@ -66,14 +60,10 @@ func gridPurchases(app *usecases.Application, window fyne.Window) (*container.Sc
 		}
 
 		for _, purchase := range purchases {
-			factorRows := createFactorsGrid(purchase.Factors, window)
-			row := container.NewGridWithColumns(4,
+			row := container.NewGridWithColumns(3,
 				widget.NewLabel(fmt.Sprintf("%d", purchase.ID)),
 				widget.NewLabel(purchase.CreatedAt.Format(time.RFC1123)),
-				container.NewVBox(factorRows...),
-				widget.NewButton("View Details", func() {
-					dialog.ShowInformation("Purchase Details", fmt.Sprintf("Purchase ID: %d\nCreated At: %s", purchase.ID, purchase.CreatedAt), window)
-				}),
+				container.NewVBox(createFactorsGrid(purchase.Factors, window)...),
 			)
 			gridContainer.Add(row)
 		}
@@ -83,28 +73,48 @@ func gridPurchases(app *usecases.Application, window fyne.Window) (*container.Sc
 
 	refreshGrid()
 
-	scroll.SetMinSize(fyne.NewSize(700, 300))
+	scroll.SetMinSize(fyne.NewSize(600, 300))
 	return scroll, refreshGrid
 }
 
 func createFactorsGrid(factors []models.Factor, window fyne.Window) []fyne.CanvasObject {
-	var factorRows []fyne.CanvasObject
+	factorHeaders := container.NewHBox(
+		widget.NewLabelWithStyle("Store Name", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle("Price", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle("Actions", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+	)
 
+	factorRows := []fyne.CanvasObject{factorHeaders}
 	for _, factor := range factors {
-		viewImageBtn := widget.NewButton("View Image", func() {
+		showImageBtn := widget.NewButton("Show Image", func() {
 			if factor.FileName.Valid {
-				imagePath := factor.FileName.String
-				image := widget.NewLabel(fmt.Sprintf("Displaying image: %s", imagePath)) // Replace with actual image widget later
-				dialog.ShowCustom("Factor Image", "Close", image, window)
+				file, err := os.Open(factor.FileName.String)
+				if err != nil {
+					dialog.ShowError(fmt.Errorf("failed to open image file: %w", err), window)
+					return
+				}
+				defer file.Close()
+
+				img, _, err := image.Decode(file)
+				if err != nil {
+					dialog.ShowError(fmt.Errorf("failed to decode image: %w", err), window)
+					return
+				}
+
+				imgCanvas := canvas.NewImageFromImage(img)
+				imgCanvas.FillMode = canvas.ImageFillContain
+				imgCanvas.SetMinSize(fyne.NewSize(300, 300))
+
+				dialog.ShowCustom("Image", "Close", imgCanvas, window)
 			} else {
-				dialog.ShowInformation("No Image", "No image was provided for this factor.", window)
+				dialog.ShowInformation("No Image", "No image file provided for this factor.", window)
 			}
 		})
 
-		row := container.NewGridWithColumns(3,
+		row := container.NewHBox(
 			widget.NewLabel(factor.StoreName),
 			widget.NewLabel(fmt.Sprintf("%d", factor.Price)),
-			viewImageBtn,
+			showImageBtn,
 		)
 		factorRows = append(factorRows, row)
 	}
@@ -112,87 +122,97 @@ func createFactorsGrid(factors []models.Factor, window fyne.Window) []fyne.Canva
 	return factorRows
 }
 
-func createPurchase(app *usecases.Application, window fyne.Window, refresh chan<- bool) (*widget.Entry, *fyne.Container, *widget.Button) {
-	factorsEntry := widget.NewEntry()
-	factorsEntry.SetPlaceHolder("store1:price,store2:price")
+func createPurchase(app *usecases.Application, window fyne.Window, refresh chan<- bool) (*fyne.Container, *widget.Button) {
+	factorsContainer := container.NewVBox()
 
-	filePickersContainer := container.NewVBox()
-	imagePaths := map[string]string{}
+	addFactorRow := func() {
+		storeEntry := widget.NewEntry()
+		storeEntry.PlaceHolder = "Store Name"
 
-	updateFilePickers := func() {
-		filePickersContainer.Objects = nil
+		priceEntry := widget.NewEntry()
+		priceEntry.PlaceHolder = "Price"
 
-		for _, factor := range strings.Split(factorsEntry.Text, ",") {
-			store := strings.Split(factor, ":")[0]
-			store = strings.TrimSpace(store)
+		fileLabel := widget.NewLabel("No File Selected")
+		filePicker := widget.NewButton("Select Image", func() {
+			dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
+				if err != nil {
+					dialog.ShowError(err, window)
+					return
+				}
+				if reader != nil {
+					fileLabel.SetText(reader.URI().Name())
+					fileLabel.Text = reader.URI().Path()
+				}
+			}, window)
+		})
 
-			if store != "" {
-				label := widget.NewLabel(fmt.Sprintf("Image for %s:", store))
-				filePickerBtn := widget.NewButton("Choose Image", func() {
-					dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
-						if err != nil || reader == nil {
-							return
-						}
-						imagePaths[store] = reader.URI().Path()
-					}, window)
-				})
-				filePickersContainer.Add(container.NewHBox(label, filePickerBtn))
+		removeButton := widget.NewButton("Remove", func() {
+			factorsContainer.Remove(factorsContainer.Objects[len(factorsContainer.Objects)-1])
+			factorsContainer.Refresh()
+		})
+
+		row := container.New(
+			layout.NewGridLayoutWithColumns(5),
+			storeEntry,
+			priceEntry,
+			fileLabel,
+			filePicker,
+			removeButton,
+		)
+
+		factorsContainer.Add(row)
+		factorsContainer.Refresh()
+	}
+
+	addFactorRow()
+
+	addFactorBtn := widget.NewButton("Add Factor", addFactorRow)
+	createBtn := widget.NewButton("Create Purchase", func() {
+		factors := []models.Factor{}
+		for _, obj := range factorsContainer.Objects {
+			if row, ok := obj.(*fyne.Container); ok {
+				storeEntry := row.Objects[0].(*widget.Entry)
+				priceEntry := row.Objects[1].(*widget.Entry)
+				fileLabel := row.Objects[2].(*widget.Label)
+
+				storeName := strings.TrimSpace(storeEntry.Text)
+				if storeName == "" {
+					dialog.ShowError(fmt.Errorf("store name cannot be empty"), window)
+					return
+				}
+
+				price, err := strconv.Atoi(strings.TrimSpace(priceEntry.Text))
+				if err != nil {
+					dialog.ShowError(fmt.Errorf("invalid price for store %s", storeName), window)
+					return
+				}
+
+				factor := models.Factor{
+					StoreName: storeName,
+					Price:     price,
+				}
+
+				if fileLabel.Text != "No File Selected" {
+					factor.FileName = sql.NullString{String: fileLabel.Text, Valid: true}
+				}
+
+				factors = append(factors, factor)
 			}
 		}
 
-		filePickersContainer.Refresh()
-	}
-
-	factorsEntry.OnChanged = func(_ string) {
-		updateFilePickers()
-	}
-
-	createBtn := widget.NewButton("Create Purchase", func() {
-		factors := splitAndConvertWithFiles(factorsEntry.Text, imagePaths, window)
-		defer func() {
-			factorsEntry.SetText("")
-			imagePaths = map[string]string{}
-			updateFilePickers()
-		}()
 		_, err := app.CreatePurchase(factors)
 		if err != nil {
 			dialog.ShowError(err, window)
+			return
 		}
 
 		refresh <- true
+		factorsContainer.Objects = nil
+		addFactorRow()
 	})
 
-	return factorsEntry, filePickersContainer, createBtn
-}
-
-func splitAndConvertWithFiles(factorsInput string, imagePaths map[string]string, window fyne.Window) []models.Factor {
-	factors := []models.Factor{}
-
-	for _, entry := range strings.Split(factorsInput, ",") {
-		parts := strings.Split(entry, ":")
-		if len(parts) < 2 {
-			dialog.ShowError(fmt.Errorf("invalid format, expected 'store:price'"), window)
-			return factors
-		}
-
-		price, err := strconv.Atoi(strings.TrimSpace(parts[1]))
-		if err != nil {
-			dialog.ShowError(fmt.Errorf("invalid price format for store: %s", strings.TrimSpace(parts[0])), window)
-			return factors
-		}
-
-		storeName := strings.TrimSpace(parts[0])
-		factor := models.Factor{
-			StoreName: storeName,
-			Price:     price,
-		}
-
-		if imagePath, ok := imagePaths[storeName]; ok {
-			factor.FileName = sql.NullString{String: imagePath, Valid: true}
-		}
-
-		factors = append(factors, factor)
-	}
-
-	return factors
+	return container.NewVBox(
+		factorsContainer,
+		addFactorBtn,
+	), createBtn
 }
