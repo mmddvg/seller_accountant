@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"inventory/pkg/models"
 	"inventory/pkg/usecases"
 	"strconv"
 
@@ -12,11 +13,16 @@ import (
 )
 
 func accountsTab(app *usecases.Application, window fyne.Window, writer chan<- bool, reader <-chan bool) *fyne.Container {
-	table, updateTable := customersGrid(app)
+	table, updateTable := customersGrid(app, window)
 
+	// Create customer input and button
 	nameEntry, createBtn := createCustomer(window, app, updateTable)
 
+	// Update customer balance inputs and button
 	idEntry, chargeEntry, updateBtn := updateCustomer(window, app, updateTable)
+
+	// Sell operation
+	sellSection := sell(app, window, writer)
 
 	go func() {
 		for range reader {
@@ -24,19 +30,27 @@ func accountsTab(app *usecases.Application, window fyne.Window, writer chan<- bo
 		}
 	}()
 
+	inputSection := container.NewVBox(
+		container.NewVBox(
+			widget.NewLabel("Create Customer"),
+			container.NewGridWithColumns(2, nameEntry, createBtn),
+		),
+		widget.NewSeparator(),
+		container.NewVBox(
+			widget.NewLabel("Increase Customer Balance"),
+			container.NewGridWithColumns(3, idEntry, chargeEntry, updateBtn),
+		),
+		widget.NewSeparator(),
+	)
+
 	return container.NewVBox(
 		widget.NewLabel("Customers"),
 		table,
 		widget.NewSeparator(),
-		widget.NewLabel("Create Customer"),
-		nameEntry,
-		createBtn,
+		inputSection,
 		widget.NewSeparator(),
-		widget.NewLabel("Increase Customer Balance"),
-		idEntry,
-		chargeEntry,
-		updateBtn,
-		sell(app, window, writer),
+		widget.NewLabel("Sell"),
+		sellSection,
 	)
 }
 
@@ -89,48 +103,79 @@ func updateCustomer(window fyne.Window, app *usecases.Application, updateTable f
 
 	return idEntry, chargeEntry, updateBtn
 }
-func customersGrid(app *usecases.Application) (*container.Scroll, func()) {
+
+func customersGrid(app *usecases.Application, window fyne.Window) (*container.Scroll, func()) {
 	gridContainer := container.NewVBox()
+
+	sales, err := app.GetSales()
+	if err != nil {
+		dialog.ShowError(err, window)
+	}
+
+	salesMap := make(map[uint][]models.Sale)
+	for _, sale := range sales {
+		salesMap[sale.CustomerId] = append(salesMap[sale.CustomerId], sale)
+	}
 
 	scroll := container.NewScroll(gridContainer)
 
 	refreshGrid := func() {
 		gridContainer.Objects = nil
 
-		headers := container.NewHBox(
+		headers := container.NewGridWithColumns(4,
 			widget.NewLabelWithStyle("ID", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 			widget.NewLabelWithStyle("Name", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 			widget.NewLabelWithStyle("Balance", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			widget.NewLabelWithStyle("Sales", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		)
 		gridContainer.Add(headers)
 
 		accounts := app.ListAccounts()
 		for _, account := range accounts {
-			row := container.NewHBox(
+			salesGrid := createSalesGrid(salesMap[uint(account.ID)])
+
+			row := container.NewGridWithColumns(4,
 				widget.NewLabel(fmt.Sprintf("%d", account.ID)),
 				widget.NewLabel(account.Name),
 				widget.NewLabel(fmt.Sprintf("%d", account.Charge)),
+				salesGrid,
 			)
 			gridContainer.Add(row)
 		}
 
 		gridContainer.Refresh()
 	}
-
 	refreshGrid()
 
-	scroll.SetMinSize(fyne.NewSize(200, 200))
+	scroll.SetMinSize(fyne.NewSize(600, 300))
 	return scroll, refreshGrid
 }
 
+func createSalesGrid(sales []models.Sale) *fyne.Container {
+	if len(sales) == 0 {
+		return container.NewVBox(widget.NewLabel("No sales"))
+	}
+
+	var rows []fyne.CanvasObject
+	for _, sale := range sales {
+		row := container.NewHBox(
+			widget.NewLabel(fmt.Sprintf("Sale ID: %d", sale.Id)),
+			widget.NewLabel(fmt.Sprintf("Price: %d", sale.Price)),
+		)
+		rows = append(rows, row)
+	}
+
+	return container.NewVBox(rows...)
+}
+
 func sell(app *usecases.Application, window fyne.Window, writer chan<- bool) *fyne.Container {
-
 	nameEntry := widget.NewEntry()
-	nameEntry.SetPlaceHolder("customer name ")
-	priceEntry := widget.NewEntry()
-	priceEntry.SetPlaceHolder("price")
+	nameEntry.SetPlaceHolder("Customer Name")
 
-	sellBtn := widget.NewButton("sell", func() {
+	priceEntry := widget.NewEntry()
+	priceEntry.SetPlaceHolder("Price")
+
+	sellBtn := widget.NewButton("Sell", func() {
 		price, err := strconv.ParseUint(priceEntry.Text, 10, 0)
 		if err != nil {
 			dialog.ShowError(err, window)
@@ -145,13 +190,9 @@ func sell(app *usecases.Application, window fyne.Window, writer chan<- bool) *fy
 		priceEntry.SetText("")
 
 		writer <- true
-
 	})
-	content := container.NewVBox(
-		nameEntry,
-		priceEntry,
-		sellBtn,
-	)
 
-	return content
+	return container.NewVBox(
+		container.NewGridWithColumns(3, nameEntry, priceEntry, sellBtn),
+	)
 }
