@@ -104,19 +104,19 @@ func updateCustomer(window fyne.Window, app *usecases.Application, updateTable f
 func customersGrid(app *usecases.Application, window fyne.Window) (*container.Scroll, func()) {
 	gridContainer := container.NewVBox()
 
-	sales, err := app.GetSales()
-	if err != nil {
-		dialog.ShowError(err, window)
-	}
-
-	salesMap := make(map[uint][]models.Sale)
-	for _, sale := range sales {
-		salesMap[sale.CustomerId] = append(salesMap[sale.CustomerId], sale)
-	}
-
 	scroll := container.NewScroll(gridContainer)
 
 	refreshGrid := func() {
+		sales, err := app.GetSales()
+		if err != nil {
+			dialog.ShowError(err, window)
+		}
+
+		salesMap := make(map[uint][]models.Sale)
+		for _, sale := range sales {
+			salesMap[sale.CustomerId] = append(salesMap[sale.CustomerId], sale)
+		}
+
 		gridContainer.Objects = nil
 
 		headers := container.NewGridWithColumns(4,
