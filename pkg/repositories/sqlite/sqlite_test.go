@@ -1,8 +1,10 @@
 package sqlite_test
 
 import (
+	"inventory/pkg/apperrors"
 	"inventory/pkg/models"
 	"inventory/pkg/repositories/sqlite"
+	"sync"
 	"testing"
 	"time"
 
@@ -180,4 +182,46 @@ func TestGetSales(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(sales))
 	assert.Equal(t, 300, sales[0].Price)
+}
+
+func TestCreateCustomer_Duplicate(t *testing.T) {
+	db := setupTestDB(t)
+	repo := sqlite.NewSqlxRepository(db)
+
+	name := "John Doe"
+	_, err := repo.CreateCustomer(name)
+	assert.NoError(t, err)
+
+	_, err = repo.CreateCustomer(name)
+	assert.Error(t, err)
+	assert.IsType(t, apperrors.Duplicate{}, err)
+}
+
+func TestGetAllCustomers_EmptyDatabase(t *testing.T) {
+	db := setupTestDB(t)
+	repo := sqlite.NewSqlxRepository(db)
+
+	customers := repo.GetAllCustomers()
+	assert.Len(t, customers, 0)
+}
+func TestCreateSale_Concurrent(t *testing.T) {
+	db := setupTestDB(t)
+	repo := sqlite.NewSqlxRepository(db)
+
+	db.MustExec("INSERT INTO customers (id, name, charge) VALUES (?, ?, ?);", 1, "Concurrent Customer", 1000)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := repo.CreateSale(1, 100)
+			assert.NoError(t, err)
+		}()
+	}
+	wg.Wait()
+
+	var remainingCharge int
+	db.Get(&remainingCharge, "SELECT charge FROM customers WHERE id = ?;", 1)
+	assert.Equal(t, 0, remainingCharge) // Assuming total charge doesn't exceed initial amount
 }

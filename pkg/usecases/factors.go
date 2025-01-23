@@ -11,7 +11,7 @@ import (
 func (app *Application) CreatePurchase(factors []models.Factor) (models.Purchase, error) {
 	for _, v := range factors {
 		if v.FileName.Valid {
-			if err := validateImageFile(v.FileName.String); err != nil {
+			if err := ValidateImageFile(v.FileName.String); err != nil {
 				return models.Purchase{}, err
 			}
 		}
@@ -28,7 +28,7 @@ func (app *Application) GetAllFactors() ([]models.Factor, error) {
 	return app.db.GetAllFactors()
 }
 
-func validateImageFile(filePath string) error {
+func ValidateImageFile(filePath string) error {
 	info, err := os.Stat(filePath)
 	if os.IsNotExist(err) {
 		return fmt.Errorf("file does not exist: %s", filePath)
