@@ -12,21 +12,21 @@ import (
 
 func InitiateUI(app *usecases.Application, fyneApp fyne.App, window fyne.Window) {
 	usernameEntry := widget.NewEntry()
-	usernameEntry.SetPlaceHolder("Username")
+	usernameEntry.SetPlaceHolder("نام کاربری")
 	passwordEntry := widget.NewPasswordEntry()
-	passwordEntry.SetPlaceHolder("Password")
+	passwordEntry.SetPlaceHolder("رمز عبور")
 
-	loginBtn := widget.NewButton("Login", func() {
+	loginBtn := widget.NewButton("ورود", func() {
 		if app.Login(usernameEntry.Text, passwordEntry.Text) {
 			window.Hide()
 			MainWindow(app, fyneApp)
 		} else {
-			dialog.ShowError(fmt.Errorf("invalid username or password"), window)
+			dialog.ShowError(fmt.Errorf("نام کاربری یا رمز عبور نامعتبر است"), window)
 		}
 	})
 
 	form := container.NewVBox(
-		widget.NewLabel("Login"),
+		widget.NewLabel("ورود"),
 		usernameEntry,
 		passwordEntry,
 		loginBtn,

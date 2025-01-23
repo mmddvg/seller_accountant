@@ -80,5 +80,5 @@ func updateNetProfit(app *usecases.Application, netProfitBinding binding.String,
 		dialog.ShowError(fmt.Errorf("error listing net profit : %s", err.Error()), window)
 		return
 	}
-	netProfitBinding.Set(fmt.Sprintf(" net profit : %d", p))
+	netProfitBinding.Set(fmt.Sprintf(" سود خالص : %d", p))
 }

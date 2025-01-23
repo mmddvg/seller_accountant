@@ -30,7 +30,7 @@ func purchasesTab(app *usecases.Application, window fyne.Window, writer chan<- b
 	}()
 
 	return container.NewVBox(
-		widget.NewLabel("Purchases"),
+		widget.NewLabel("خرید ها"),
 		purchasesGrid,
 		widget.NewSeparator(),
 		factorsContainer,
@@ -47,9 +47,9 @@ func gridPurchases(app *usecases.Application, window fyne.Window) (*container.Sc
 		gridContainer.Objects = nil
 
 		headers := container.NewGridWithColumns(3,
-			widget.NewLabelWithStyle("ID", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-			widget.NewLabelWithStyle("Created At", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-			widget.NewLabelWithStyle("Factors", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			widget.NewLabelWithStyle("آیدی", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			widget.NewLabelWithStyle("تاریخ", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			widget.NewLabelWithStyle("رسید ها", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		)
 		gridContainer.Add(headers)
 
@@ -79,14 +79,14 @@ func gridPurchases(app *usecases.Application, window fyne.Window) (*container.Sc
 
 func createFactorsGrid(factors []models.Factor, window fyne.Window) []fyne.CanvasObject {
 	factorHeaders := container.NewHBox(
-		widget.NewLabelWithStyle("Store Name", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		widget.NewLabelWithStyle("Price", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		widget.NewLabelWithStyle("Actions", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle("نام فروشگاه", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle("قیمت", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle("عملیات", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 	)
 
 	factorRows := []fyne.CanvasObject{factorHeaders}
 	for _, factor := range factors {
-		showImageBtn := widget.NewButton("Show Image", func() {
+		showImageBtn := widget.NewButton("نشان دادن عکس", func() {
 			if factor.FileName.Valid {
 				file, err := os.Open(factor.FileName.String)
 				if err != nil {
@@ -122,18 +122,20 @@ func createFactorsGrid(factors []models.Factor, window fyne.Window) []fyne.Canva
 	return factorRows
 }
 
+const message string = "فایلی انتخاب نشده است"
+
 func createPurchase(app *usecases.Application, window fyne.Window, refresh chan<- bool) (*fyne.Container, *widget.Button) {
 	factorsContainer := container.NewVBox()
 
 	addFactorRow := func() {
 		storeEntry := widget.NewEntry()
-		storeEntry.PlaceHolder = "Store Name"
+		storeEntry.PlaceHolder = "نام فروشگاه"
 
 		priceEntry := widget.NewEntry()
-		priceEntry.PlaceHolder = "Price"
+		priceEntry.PlaceHolder = "قیمت"
 
-		fileLabel := widget.NewLabel("No File Selected")
-		filePicker := widget.NewButton("Select Image", func() {
+		fileLabel := widget.NewLabel(message)
+		filePicker := widget.NewButton("انتخاب فایل", func() {
 			dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
 				if err != nil {
 					dialog.ShowError(err, window)
@@ -146,7 +148,7 @@ func createPurchase(app *usecases.Application, window fyne.Window, refresh chan<
 			}, window)
 		})
 
-		removeButton := widget.NewButton("Remove", func() {
+		removeButton := widget.NewButton("پاک کردن", func() {
 			factorsContainer.Remove(factorsContainer.Objects[len(factorsContainer.Objects)-1])
 			factorsContainer.Refresh()
 		})
@@ -166,8 +168,8 @@ func createPurchase(app *usecases.Application, window fyne.Window, refresh chan<
 
 	addFactorRow()
 
-	addFactorBtn := widget.NewButton("Add Factor", addFactorRow)
-	createBtn := widget.NewButton("Create Purchase", func() {
+	addFactorBtn := widget.NewButton("ایجاد رسید", addFactorRow)
+	createBtn := widget.NewButton("ایجاد خرید", func() {
 		factors := []models.Factor{}
 		for _, obj := range factorsContainer.Objects {
 			if row, ok := obj.(*fyne.Container); ok {
@@ -177,13 +179,13 @@ func createPurchase(app *usecases.Application, window fyne.Window, refresh chan<
 
 				storeName := strings.TrimSpace(storeEntry.Text)
 				if storeName == "" {
-					dialog.ShowError(fmt.Errorf("store name cannot be empty"), window)
+					dialog.ShowError(fmt.Errorf("نام فروشگاه الزامی است"), window)
 					return
 				}
 
 				price, err := strconv.Atoi(strings.TrimSpace(priceEntry.Text))
 				if err != nil {
-					dialog.ShowError(fmt.Errorf("invalid price for store %s", storeName), window)
+					dialog.ShowError(fmt.Errorf("قیمت نامعتبر است %s", storeName), window)
 					return
 				}
 
@@ -192,7 +194,7 @@ func createPurchase(app *usecases.Application, window fyne.Window, refresh chan<
 					Price:     price,
 				}
 
-				if fileLabel.Text != "No File Selected" {
+				if fileLabel.Text != message {
 					factor.FileName = sql.NullString{String: fileLabel.Text, Valid: true}
 				}
 

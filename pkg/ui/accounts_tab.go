@@ -15,13 +15,10 @@ import (
 func accountsTab(app *usecases.Application, window fyne.Window, writer chan<- bool, reader <-chan bool) *fyne.Container {
 	table, updateTable := customersGrid(app, window)
 
-	// Create customer input and button
 	nameEntry, createBtn := createCustomer(window, app, updateTable)
 
-	// Update customer balance inputs and button
 	idEntry, chargeEntry, updateBtn := updateCustomer(window, app, updateTable)
 
-	// Sell operation
 	sellSection := sell(app, window, writer)
 
 	go func() {
@@ -32,36 +29,36 @@ func accountsTab(app *usecases.Application, window fyne.Window, writer chan<- bo
 
 	inputSection := container.NewVBox(
 		container.NewVBox(
-			widget.NewLabel("Create Customer"),
+			widget.NewLabel("ایجاد مشتری"),
 			container.NewGridWithColumns(2, nameEntry, createBtn),
 		),
 		widget.NewSeparator(),
 		container.NewVBox(
-			widget.NewLabel("Increase Customer Balance"),
+			widget.NewLabel("افزایش اعتبار مشتری"),
 			container.NewGridWithColumns(3, idEntry, chargeEntry, updateBtn),
 		),
 		widget.NewSeparator(),
 	)
 
 	return container.NewVBox(
-		widget.NewLabel("Customers"),
+		widget.NewLabel("مشتری ها"),
 		table,
 		widget.NewSeparator(),
 		inputSection,
 		widget.NewSeparator(),
-		widget.NewLabel("Sell"),
+		widget.NewLabel("فروش"),
 		sellSection,
 	)
 }
 
 func createCustomer(window fyne.Window, app *usecases.Application, updateTable func()) (*widget.Entry, *widget.Button) {
 	nameEntry := widget.NewEntry()
-	nameEntry.SetPlaceHolder("Account Name")
+	nameEntry.SetPlaceHolder("نام مشتری")
 
-	createBtn := widget.NewButton("Create Account", func() {
+	createBtn := widget.NewButton("ایجاد مشتری", func() {
 		name := nameEntry.Text
 		if name == "" {
-			dialog.ShowError(fmt.Errorf("account name cannot be empty"), window)
+			dialog.ShowError(fmt.Errorf("نام مشتری الزامی است"), window)
 			return
 		}
 		_, err := app.CreateAccount(name)
@@ -76,20 +73,20 @@ func createCustomer(window fyne.Window, app *usecases.Application, updateTable f
 
 func updateCustomer(window fyne.Window, app *usecases.Application, updateTable func()) (*widget.Entry, *widget.Entry, *widget.Button) {
 	idEntry := widget.NewEntry()
-	idEntry.SetPlaceHolder("Account ID")
+	idEntry.SetPlaceHolder("آیدی مشتری")
 
 	chargeEntry := widget.NewEntry()
-	chargeEntry.SetPlaceHolder("Balance")
+	chargeEntry.SetPlaceHolder("اعتبار")
 
-	updateBtn := widget.NewButton("Update Balance", func() {
+	updateBtn := widget.NewButton("افزایش اعتبار", func() {
 		id, err := strconv.Atoi(idEntry.Text)
 		if err != nil {
-			dialog.ShowError(fmt.Errorf("invalid Account ID"), window)
+			dialog.ShowError(fmt.Errorf("آیدی نامعتبر است"), window)
 			return
 		}
 		balance, err := strconv.Atoi(chargeEntry.Text)
 		if err != nil {
-			dialog.ShowError(fmt.Errorf("invalid Balance"), window)
+			dialog.ShowError(fmt.Errorf("ورودی نامعتبر است"), window)
 			return
 		}
 		_, err = app.ChargeAccount(uint(id), uint(balance))
@@ -123,10 +120,10 @@ func customersGrid(app *usecases.Application, window fyne.Window) (*container.Sc
 		gridContainer.Objects = nil
 
 		headers := container.NewGridWithColumns(4,
-			widget.NewLabelWithStyle("ID", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-			widget.NewLabelWithStyle("Name", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-			widget.NewLabelWithStyle("Balance", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-			widget.NewLabelWithStyle("Sales", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			widget.NewLabelWithStyle("آیدی", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			widget.NewLabelWithStyle("نام", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			widget.NewLabelWithStyle("اعتبار", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			widget.NewLabelWithStyle("فروش", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		)
 		gridContainer.Add(headers)
 
@@ -159,8 +156,8 @@ func createSalesGrid(sales []models.Sale) *fyne.Container {
 	var rows []fyne.CanvasObject
 	for _, sale := range sales {
 		row := container.NewHBox(
-			widget.NewLabel(fmt.Sprintf("Sale ID: %d", sale.Id)),
-			widget.NewLabel(fmt.Sprintf("Price: %d", sale.Price)),
+			widget.NewLabel(fmt.Sprintf("آیدی فروش: %d", sale.Id)),
+			widget.NewLabel(fmt.Sprintf("قیمت: %d", sale.Price)),
 		)
 		rows = append(rows, row)
 	}
@@ -170,12 +167,12 @@ func createSalesGrid(sales []models.Sale) *fyne.Container {
 
 func sell(app *usecases.Application, window fyne.Window, writer chan<- bool) *fyne.Container {
 	nameEntry := widget.NewEntry()
-	nameEntry.SetPlaceHolder("Customer Name")
+	nameEntry.SetPlaceHolder("نام مشتری")
 
 	priceEntry := widget.NewEntry()
-	priceEntry.SetPlaceHolder("Price")
+	priceEntry.SetPlaceHolder("قیمت")
 
-	sellBtn := widget.NewButton("Sell", func() {
+	sellBtn := widget.NewButton("فروش", func() {
 		price, err := strconv.ParseUint(priceEntry.Text, 10, 0)
 		if err != nil {
 			dialog.ShowError(err, window)

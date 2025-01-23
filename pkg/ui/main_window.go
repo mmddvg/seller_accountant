@@ -17,9 +17,9 @@ func MainWindow(app *usecases.Application, fyneApp fyne.App) {
 	readers := lo.FanOut(3, 0, writer)
 
 	tabs := container.NewAppTabs(
-		container.NewTabItem("dashboard", dashBoardTab(app, mainWindow, readers[0])),
-		container.NewTabItem("customer management", accountsTab(app, mainWindow, writer, readers[1])),
-		container.NewTabItem("purchase management", purchasesTab(app, mainWindow, writer, readers[2])),
+		container.NewTabItem("داشبورد", dashBoardTab(app, mainWindow, readers[0])),
+		container.NewTabItem("مدیریت مشتری و فروش ", accountsTab(app, mainWindow, writer, readers[1])),
+		container.NewTabItem("مدیریت خرید", purchasesTab(app, mainWindow, writer, readers[2])),
 	)
 
 	mainWindow.SetContent(tabs)
